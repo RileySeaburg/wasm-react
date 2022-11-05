@@ -1,8 +1,125 @@
 import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
+import { createFFmpeg, fetchFile, FFmpeg } from '@ffmpeg/ffmpeg'
+import { useEffect, useRef, useState } from 'react'
+import { useReactMediaRecorder } from "react-media-recorder";
+
 
 export default function Home() {
+  const [stream, setStream] = useState<MediaStream>()
+  const [playing, setPlaying] = useState(false)
+  const { status, startRecording, stopRecording, mediaBlobUrl } = useReactMediaRecorder({ video: true });
+
+  const [gif, setGif] = useState<String>()
+  // create ffmpeg instance
+  const recorder = new MediaRecorder(stream as MediaStream)
+  const ffmpeg = createFFmpeg({
+    mainName: 'main',
+    corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+  });
+
+
+  const startVideoPlayer = () => {
+    navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    }).then((stream) => {
+      let video = document.querySelector('video') as HTMLVideoElement
+      video.srcObject = stream
+      setPlaying(true)
+      setStream(stream)
+    })
+  }
+
+  const stopVideoPlayer = () => {
+    stream?.getTracks().forEach((track) => {
+      track.stop()
+    })
+    setPlaying(false)
+
+  }
+
+//  this needs to stream into a blob
+
+  //  save recording to file
+  // assign proper metadata to the file
+  // ensure length of the video is noted
+
+  const saveRecording = async () => {
+    const newURL = URL.createObjectURL(recorder?.stream)
+    const blob = await fetch(mediaBlobUrl).then(r => r.blob())
+    const file = new File([blob], "test.mp4", {
+      type: blob.type,
+      lastModified: Date.now()
+    })
+    console.log(file)
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onloadend = function () {
+      const base64data = reader.result;
+      console.log(base64data)
+    }
+  }
+
+
+
+  // convert to gif
+  const convertToGif = async () => {
+
+    await ffmpeg.load()
+
+    // write the file to memory
+    ffmpeg.FS('writeFile', 'test.webm', await fetchFile(recording as Blob))
+    // run the ffmpeg command
+    await ffmpeg.run('-i', 'test.webm', '-t', '2.5', '-ss', '2.0', '-f', 'gif', 'out.gif')
+    // read the result
+    const data = ffmpeg.FS('readFile', 'out.gif')
+    // create a URL
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: 'image/gif' }))
+    setGif(url)
+  }
+
+  // stream video
+  const streamVideo = async () => {
+
+    if (!ffmpeg.isLoaded()) {
+      console.log('ffmpeg not loaded')
+      await ffmpeg.load()
+      
+    }
+
+    ffmpeg.FS('writeFile', 'test.mp4', await fetchFile(recording as Blob))
+    // grab the video that was just created
+    const video = ffmpeg.FS('readFile', 'test.mp4')
+    // log video to console
+    console.log(video)
+    // run the ffmpeg command
+    await ffmpeg.run('-i', 'test.mp4', '-f', 'mp4', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-b:a', '128k', '-f', 'flv', 'rtmp:localhost:1935/live/test', '-y')
+  
+    //log the output
+    console.log(ffmpeg.FS('readFile', 'test.mp4'))
+  }
+
+  // stop streaming video
+  const stopStreamingVideo = async () => {
+    if (!ffmpeg.isLoaded()) {
+      await ffmpeg.load()
+    }
+    await ffmpeg.exit()
+  }
+
+  //  log recording to console every 0.5 seconds
+  useEffect(() => {
+    if (recording) {
+      let interval = setInterval(() => {
+        console.log(recording)
+      }, 500)
+      return () => clearInterval(interval)
+    }
+  }, [recording])
+
+
   return (
     <div className={styles.container}>
       <Head>
@@ -12,46 +129,20 @@ export default function Home() {
       </Head>
 
       <main className={styles.main}>
-        <h1 className={styles.title}>
-          Welcome to <a href="https://nextjs.org">Next.js!</a>
-        </h1>
+        <video
+          className='video-player'
+          autoPlay muted
+        ></video>
+        <button onClick={startVideoPlayer}>Start</button>
+        <button onClick={stopVideoPlayer}>Stop</button>
+        <button onClick={startRecording}>Start Recording</button>
+        <button onClick={stopRecording}>Stop Recording</button>
+        <button onClick={convertToGif}>Convert to Gif</button>
+        <button onClick={saveRecording}>Save Recording</button>
+        <button onClick={streamVideo}>Stream Video</button>
+        <button onClick={stopStreamingVideo}>Stop Streaming Video</button>
 
-        <p className={styles.description}>
-          Get started by editing{' '}
-          <code className={styles.code}>pages/index.tsx</code>
-        </p>
 
-        <div className={styles.grid}>
-          <a href="https://nextjs.org/docs" className={styles.card}>
-            <h2>Documentation &rarr;</h2>
-            <p>Find in-depth information about Next.js features and API.</p>
-          </a>
-
-          <a href="https://nextjs.org/learn" className={styles.card}>
-            <h2>Learn &rarr;</h2>
-            <p>Learn about Next.js in an interactive course with quizzes!</p>
-          </a>
-
-          <a
-            href="https://github.com/vercel/next.js/tree/canary/examples"
-            className={styles.card}
-          >
-            <h2>Examples &rarr;</h2>
-            <p>Discover and deploy boilerplate example Next.js projects.</p>
-          </a>
-
-          <a
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.card}
-          >
-            <h2>Deploy &rarr;</h2>
-            <p>
-              Instantly deploy your Next.js site to a public URL with Vercel.
-            </p>
-          </a>
-        </div>
       </main>
 
       <footer className={styles.footer}>
